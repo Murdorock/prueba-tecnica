@@ -43,7 +43,15 @@ $('#start3').onclick=()=>{drawQuiz();s3=Date.now();$('#start3').disabled=true;$(
 let participant={name:'',age:'',id:''};
 function participantText(){return `<b>Participante:</b> ${participant.name}<br><b>Edad:</b> ${participant.age}<br><b>Cédula:</b> ${participant.id}`}
 function refreshParticipantSummary(){document.querySelectorAll('.participant-summary-slot').forEach(x=>x.innerHTML=participantText())}
-document.querySelector('#participantContinue').onclick=()=>{let name=document.querySelector('#participantName').value.trim(),age=document.querySelector('#participantAge').value.trim(),id=document.querySelector('#participantId').value.replace(/\s+/g,'');let err='';if(name.length<3)err='Ingrese el nombre completo.';else if(!/^\d{1,3}$/.test(age)||+age<14||+age>100)err='Ingrese una edad válida.';else if(!/^\d{5,15}$/.test(id))err='Ingrese un número de cédula válido, solo dígitos.';document.querySelector('#participantError').textContent=err;if(err)return;participant={name,age,id};refreshParticipantSummary();document.querySelector('#participantOverlay').style.display='none'};
+// Verificación de inscripción por cédula (RPC público, sin login de Supabase)
+const SB_RPC_KEY='sb_publishable_xxHMVUdXPX_P3UHXsPyKKw_Y_kfcbke';
+async function esCedulaInscrita(cedula){
+    const url='https://txeuzsypnwesscganktp.supabase.co/rest/v1/rpc/validar_cedula_inscrita';
+    const r=await fetch(url,{method:'POST',headers:{'apikey':SB_RPC_KEY,'Authorization':'Bearer '+SB_RPC_KEY,'Content-Type':'application/json'},body:JSON.stringify({p_cedula:cedula})});
+    if(!r.ok){let t=await r.text();throw new Error('HTTP '+r.status+': '+t)}
+    return await r.json();
+}
+document.querySelector('#participantContinue').onclick=async()=>{let name=document.querySelector('#participantName').value.trim(),age=document.querySelector('#participantAge').value.trim(),id=document.querySelector('#participantId').value.replace(/\s+/g,'');let err='';if(name.length<3)err='Ingrese el nombre completo.';else if(!/^\d{1,3}$/.test(age)||+age<14||+age>100)err='Ingrese una edad válida.';else if(!/^\d{5,15}$/.test(id))err='Ingrese un número de cédula válido, solo dígitos.';document.querySelector('#participantError').textContent=err;if(err)return;const btn=document.querySelector('#participantContinue'),btnText=btn.textContent;btn.disabled=true;btn.textContent='Verificando inscripción...';try{const inscrita=await esCedulaInscrita(id);if(!inscrita){document.querySelector('#participantError').textContent='Esta cédula no está inscrita para la prueba.';btn.disabled=false;btn.textContent=btnText;return;}participant={name,age,id};refreshParticipantSummary();document.querySelector('#participantOverlay').style.display='none';if(!currentRecord)ensureRecord();}catch(e){document.querySelector('#participantError').textContent='No se pudo verificar la inscripción. Intente de nuevo.';console.error('Validación inscripción:',e);btn.disabled=false;btn.textContent=btnText;}};
 
 // Registro local y panel de consulta/exportación
 const RESULTS_KEY='pruebaTecnicaResultadosV1';let currentRecord=null;
@@ -60,8 +68,7 @@ function renderAdmin(){let a=loadResults(),rows=document.querySelector('#adminRo
 document.querySelector('#adminOpen')?.addEventListener('click',()=>{renderAdmin();document.querySelector('#adminPanel').style.display='block'});document.querySelector('#adminClose')?.addEventListener('click',()=>document.querySelector('#adminPanel').style.display='none');
 document.querySelector('#adminExport')?.addEventListener('click',()=>{let a=loadResults();if(!a.length){alert('No hay resultados para exportar.');return}let head=['Fecha','Nombre','Edad','Cedula','P1_Tiempo','P1_Exactos','P1_Precision','P1_Velocidad','TPL_Tiempo','TPL_Errores','TPL_Correctas','TPL_Precision','Medellin_Correctas','Medellin_Errores','Medellin_Puntuacion','Medellin_Tiempo'];let lines=[head.join(',')];a.forEach(x=>lines.push([x.date,x.participant?.name,x.participant?.age,x.participant?.id,x.p1?.time,x.p1?.exact,x.p1?.accuracy,x.p1?.speed,x.p2?.time,x.p2?.errors,x.p2?.correct,x.p2?.accuracy,x.p3?.correct,x.p3?.errors,x.p3?.score,x.p3?.time].map(escCSV).join(',')));let blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(blob),ael=document.createElement('a');ael.href=u;ael.download='resultados_prueba_tecnica.csv';ael.click();URL.revokeObjectURL(u)});
 document.querySelector('#adminClear')?.addEventListener('click',()=>{if(confirm('¿Borrar todos los resultados guardados en este dispositivo?')){localStorage.removeItem(RESULTS_KEY);currentRecord=null;renderAdmin()}});
-// Crear la sesión al completar los datos del participante
-const pc=document.querySelector('#participantContinue');pc.addEventListener('click',()=>setTimeout(()=>{if(participant.id&&!currentRecord)ensureRecord()},0));
+
 
 // Envío centralizado a Supabase. La publishable key queda en cliente y RLS limita sus permisos.
 const SB_URL='https://txeuzsypnwesscganktp.supabase.co/rest/v1/resultados_prueba';
